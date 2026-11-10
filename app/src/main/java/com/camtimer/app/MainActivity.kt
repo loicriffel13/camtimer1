@@ -10,6 +10,10 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.view.Gravity
 import android.view.View
+import android.view.inputmethod.InputMethodManager
+import android.content.Context
+import android.text.TextWatcher
+import android.text.Editable
 import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -58,7 +62,8 @@ class MainActivity : ComponentActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(20, 24, 32))
-            setPadding(12, 12, 12, 12)
+            setPadding(12, 12, 12, 20)
+            fitsSystemWindows = true
         }
         preview = PreviewView(this)
         val cameraBox = FrameLayout(this)
@@ -73,15 +78,32 @@ class MainActivity : ComponentActivity() {
         cameraBox.addView(counter, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
         root.addView(cameraBox, LinearLayout.LayoutParams(-1, 0, 1f))
 
-        val controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(20, 24, 32))
+        }
         duration = EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
             setText("120")
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
             hint = "Durée en secondes"
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            setSingleLine(true)
+            setOnEditorActionListener { _, _, _ ->
+                applyDuration()
+                hideKeyboard()
+                true
+            }
         }
         controls.addView(duration)
+        duration.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                if (!running) applyDuration()
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
         val timerButtons = LinearLayout(this)
         fun button(label: String, action: () -> Unit) {
             timerButtons.addView(Button(this).apply {
@@ -90,28 +112,43 @@ class MainActivity : ComponentActivity() {
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
         button("START") {
+            hideKeyboard()
+            duration.clearFocus()
             if (!running) {
                 running = true
                 lastTick = android.os.SystemClock.elapsedRealtime()
             }
         }
-        button("PAUSE") { running = false }
+        button("PAUSE") { running = false; hideKeyboard() }
         button("RESET") {
             running = false
-            remainingMs = ((duration.text.toString().toLongOrNull() ?: 120L).coerceIn(1, 86400)) * 1000L
-            updateCounter()
+            applyDuration()
+            hideKeyboard()
         }
         controls.addView(timerButtons)
         recordButton = Button(this).apply {
             text = "REC"
             setOnClickListener { if (recording == null) beginRecording() else recording?.stop() }
         }
-        controls.addView(recordButton)
         root.addView(controls)
+        // Separate recording button: remains visible at the bottom of the screen.
+        root.addView(recordButton, LinearLayout.LayoutParams(-1, -2))
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         setContentView(root)
         updateCounter()
         handler.post(tick)
         permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+    }
+
+    private fun applyDuration() {
+        val seconds = duration.text.toString().toLongOrNull() ?: return
+        remainingMs = seconds.coerceIn(1L, 86400L) * 1000L
+        updateCounter()
+    }
+
+    private fun hideKeyboard() {
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+            .hideSoftInputFromWindow(duration.windowToken, 0)
     }
 
     private fun updateCounter() {
