@@ -193,8 +193,13 @@ class MainActivity : ComponentActivity() {
 
     private fun updateCounter() {
         if (counter.hasFocus()) return
-        val absoluteSeconds = (kotlin.math.abs(remainingMs) / 1000L)
-        val sign = if (remainingMs < 0) "+" else ""
+        // Display zero once: positive overtime starts at +00:01.
+        val absoluteSeconds = if (remainingMs >= 0L) {
+            (remainingMs + 999L) / 1000L
+        } else {
+            (-remainingMs) / 1000L
+        }
+        val sign = if (remainingMs <= -1000L) "+" else ""
         counter.text = String.format(Locale.US, "%s%02d:%02d", sign, absoluteSeconds / 60, absoluteSeconds % 60)
         counter.setTextColor(if (remainingMs < 0) Color.GREEN else Color.WHITE)
     }
