@@ -31,7 +31,8 @@ import java.util.concurrent.TimeUnit
 class MainActivity : ComponentActivity() {
     private lateinit var preview: PreviewView
     private lateinit var counter: TextView
-    private lateinit var recordButton: Button
+    private lateinit var recordButton: TextView
+    private lateinit var timerButton: TextView
     private var configuredMs = 120_000L
     private var blinkOn = true
     private val blink = object : Runnable {
@@ -117,43 +118,41 @@ class MainActivity : ComponentActivity() {
                 elevation = 8f
                 setOnClickListener { click() }
             }
-        val start = roundButton("▶", Color.rgb(0, 225, 60)) {
+        timerButton = roundButton("▶", Color.rgb(0, 225, 60)) {
             applyTypedTime()
-            if (!running) {
-                running = true
-                lastTick = android.os.SystemClock.elapsedRealtime()
-            }
-        }
-        val reset = roundButton("■", Color.rgb(235, 25, 35)) {
-            running = false
-            applyTypedTime()
-            remainingMs = configuredMs
-            updateCounter()
+            running = !running
+            if (running) lastTick = android.os.SystemClock.elapsedRealtime()
+            updateTimerButton()
         }
         val buttonSize = (68 * resources.displayMetrics.density).toInt()
-        controls.addView(start, LinearLayout.LayoutParams(buttonSize, buttonSize).apply {
-            rightMargin = (28 * resources.displayMetrics.density).toInt()
-        })
-        controls.addView(reset, LinearLayout.LayoutParams(buttonSize, buttonSize))
-        root.addView(controls)
-        recordButton = Button(this).apply {
-            text = "● REC"
-            setTextColor(Color.WHITE)
-            textSize = 20f
-            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(190, 35, 45))
-            setOnClickListener {
-                if (recording == null) beginRecording() else {
-                    isEnabled = false
-                    recording?.stop()
-                }
+        recordButton = roundButton("●", Color.rgb(220, 25, 35)) {
+            if (recording == null) beginRecording() else {
+                recordButton.isEnabled = false
+                recording?.stop()
             }
         }
-        root.addView(recordButton, LinearLayout.LayoutParams(-1, (58 * resources.displayMetrics.density).toInt()))
+        controls.addView(timerButton, LinearLayout.LayoutParams(buttonSize, buttonSize).apply {
+            rightMargin = (28 * resources.displayMetrics.density).toInt()
+        })
+        controls.addView(recordButton, LinearLayout.LayoutParams(buttonSize, buttonSize))
+        root.addView(controls)
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         setContentView(root)
         updateCounter()
+        updateTimerButton()
+        recordButton.contentDescription = "ENR enregistrement"
         handler.post(tick)
         permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+    }
+
+    private fun setCircleColor(view: TextView, color: Int) {
+        (view.background as? GradientDrawable)?.setColor(color)
+    }
+
+    private fun updateTimerButton() {
+        timerButton.text = if (running) "■" else "▶"
+        setCircleColor(timerButton, if (running) Color.rgb(235, 25, 35) else Color.rgb(0, 225, 60))
+        timerButton.contentDescription = if (running) "STOP chronomètre" else "START chronomètre"
     }
 
     private fun applyTypedTime() {
@@ -214,8 +213,8 @@ class MainActivity : ComponentActivity() {
         recording = pending.start(ContextCompat.getMainExecutor(this)) { event ->
             when (event) {
                 is VideoRecordEvent.Start -> {
-                    recordButton.text = "■ STOP"
-                    recordButton.backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(0, 195, 65))
+                    recordButton.text = "■"
+                    recordButton.contentDescription = "STOP enregistrement"
                     blinkOn = true
                     recordButton.alpha = 1f
                     handler.removeCallbacks(blink)
@@ -227,8 +226,8 @@ class MainActivity : ComponentActivity() {
                     recordButton.alpha = 1f
                     recording = null
                     recordButton.isEnabled = true
-                    recordButton.text = "● REC"
-                    recordButton.backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(190, 35, 45))
+                    recordButton.text = "●"
+                    recordButton.contentDescription = "ENR enregistrement"
                     Toast.makeText(this, if (event.hasError()) "Erreur vidéo: ${event.error}" else "Vidéo enregistrée", Toast.LENGTH_LONG).show()
                 }
             }
