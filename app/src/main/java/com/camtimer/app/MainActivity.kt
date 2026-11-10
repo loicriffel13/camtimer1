@@ -131,10 +131,24 @@ class MainActivity : ComponentActivity() {
                 recording?.stop()
             }
         }
-        controls.addView(timerButton, LinearLayout.LayoutParams(buttonSize, buttonSize).apply {
-            rightMargin = (28 * resources.displayMetrics.density).toInt()
-        })
-        controls.addView(recordButton, LinearLayout.LayoutParams(buttonSize, buttonSize))
+        val resetButton = roundButton("↺", Color.rgb(105, 115, 130)) {
+            applyTypedTime()
+            running = false
+            remainingMs = configuredMs
+            updateCounter()
+            updateTimerButton()
+        }
+        resetButton.setTextColor(Color.WHITE)
+        resetButton.contentDescription = "RESET chronomètre"
+        // Equal-width cells anchor START at left and ENR at right.
+        fun addControl(view: TextView, alignment: Int) {
+            val slot = FrameLayout(this)
+            slot.addView(view, FrameLayout.LayoutParams(buttonSize, buttonSize, alignment))
+            controls.addView(slot, LinearLayout.LayoutParams(0, buttonSize, 1f))
+        }
+        addControl(timerButton, Gravity.START or Gravity.CENTER_VERTICAL)
+        addControl(resetButton, Gravity.CENTER)
+        addControl(recordButton, Gravity.END or Gravity.CENTER_VERTICAL)
         root.addView(controls)
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         setContentView(root)
