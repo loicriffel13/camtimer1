@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -30,7 +32,17 @@ class MainActivity : ComponentActivity() {
     private lateinit var preview: PreviewView
     private lateinit var counter: TextView
     private lateinit var recordButton: Button
-    private lateinit var duration: EditText
+    private var configuredMs = 120_000L
+    private var blinkOn = true
+    private val blink = object : Runnable {
+        override fun run() {
+            if (recording != null) {
+                blinkOn = !blinkOn
+                recordButton.alpha = if (blinkOn) 1f else 0.35f
+                handler.postDelayed(this, 500)
+            }
+        }
+    }
     private var videoCapture: VideoCapture<Recorder>? = null
     private var recording: Recording? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -68,7 +80,14 @@ class MainActivity : ComponentActivity() {
         preview = PreviewView(this)
         val cameraBox = FrameLayout(this)
         cameraBox.addView(preview, FrameLayout.LayoutParams(-1, -1))
-        counter = TextView(this).apply {
+        counter = EditText(this).apply {
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            setSelectAllOnFocus(true)
+            typeface = Typeface.DEFAULT_BOLD
+            setOnEditorActionListener { _, _, _ -> applyTypedTime(); true }
+            setOnFocusChangeListener { _, focused -> if (!focused) applyTypedTime() }
             textSize = 42f
             setTextColor(Color.WHITE)
             setShadowLayer(5f, 2f, 2f, Color.BLACK)
@@ -79,60 +98,57 @@ class MainActivity : ComponentActivity() {
         root.addView(cameraBox, LinearLayout.LayoutParams(-1, 0, 1f))
 
         val controls = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(20, 24, 32))
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, 12, 0, 12)
         }
-        duration = EditText(this).apply {
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            setText("120")
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.LTGRAY)
-            hint = "Durée en secondes"
-            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
-            setSingleLine(true)
-            setOnEditorActionListener { _, _, _ ->
-                applyDuration()
-                hideKeyboard()
-                true
+        fun roundButton(symbol: String, color: Int, click: () -> Unit): TextView =
+            TextView(this).apply {
+                text = symbol
+                textSize = 34f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                setTextColor(Color.BLACK)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(color)
+                    setStroke(5, Color.DKGRAY)
+                }
+                elevation = 8f
+                setOnClickListener { click() }
             }
-        }
-        controls.addView(duration)
-        duration.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                if (!running) applyDuration()
-            }
-            override fun afterTextChanged(s: Editable?) {}
-        })
-        val timerButtons = LinearLayout(this)
-        fun button(label: String, action: () -> Unit) {
-            timerButtons.addView(Button(this).apply {
-                text = label
-                setOnClickListener { action() }
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-        }
-        button("START") {
-            hideKeyboard()
-            duration.clearFocus()
+        val start = roundButton("▶", Color.rgb(0, 225, 60)) {
+            applyTypedTime()
             if (!running) {
                 running = true
                 lastTick = android.os.SystemClock.elapsedRealtime()
             }
         }
-        button("PAUSE") { running = false; hideKeyboard() }
-        button("RESET") {
+        val reset = roundButton("■", Color.rgb(235, 25, 35)) {
             running = false
-            applyDuration()
-            hideKeyboard()
+            applyTypedTime()
+            remainingMs = configuredMs
+            updateCounter()
         }
-        controls.addView(timerButtons)
-        recordButton = Button(this).apply {
-            text = "REC"
-            setOnClickListener { if (recording == null) beginRecording() else recording?.stop() }
-        }
+        val buttonSize = (68 * resources.displayMetrics.density).toInt()
+        controls.addView(start, LinearLayout.LayoutParams(buttonSize, buttonSize).apply {
+            rightMargin = (28 * resources.displayMetrics.density).toInt()
+        })
+        controls.addView(reset, LinearLayout.LayoutParams(buttonSize, buttonSize))
         root.addView(controls)
-        // Separate recording button: remains visible at the bottom of the screen.
-        root.addView(recordButton, LinearLayout.LayoutParams(-1, -2))
+        recordButton = Button(this).apply {
+            text = "● REC"
+            setTextColor(Color.WHITE)
+            textSize = 20f
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(190, 35, 45))
+            setOnClickListener {
+                if (recording == null) beginRecording() else {
+                    isEnabled = false
+                    recording?.stop()
+                }
+            }
+        }
+        root.addView(recordButton, LinearLayout.LayoutParams(-1, (58 * resources.displayMetrics.density).toInt()))
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         setContentView(root)
         updateCounter()
@@ -140,18 +156,30 @@ class MainActivity : ComponentActivity() {
         permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
     }
 
-    private fun applyDuration() {
-        val seconds = duration.text.toString().toLongOrNull() ?: return
-        remainingMs = seconds.coerceIn(1L, 86400L) * 1000L
+    private fun applyTypedTime() {
+        if (!counter.hasFocus()) return
+        val value = counter.text.toString().trim().removePrefix("+")
+        val parts = value.split(":")
+        val seconds = if (parts.size == 2) {
+            val m = parts[0].toLongOrNull()
+            val sec = parts[1].toLongOrNull()
+            if (m != null && sec != null && sec in 0..59) m * 60 + sec else null
+        } else value.toLongOrNull()
+        if (seconds != null && seconds in 1..86400) {
+            configuredMs = seconds * 1000L
+            remainingMs = configuredMs
+            lastTick = android.os.SystemClock.elapsedRealtime()
+        } else {
+            Toast.makeText(this, "Durée attendue : MM:SS (ex. 02:30)", Toast.LENGTH_SHORT).show()
+        }
+        counter.clearFocus()
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
+            .hideSoftInputFromWindow(counter.windowToken, 0)
         updateCounter()
     }
 
-    private fun hideKeyboard() {
-        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
-            .hideSoftInputFromWindow(duration.windowToken, 0)
-    }
-
     private fun updateCounter() {
+        if (counter.hasFocus()) return
         val absoluteSeconds = (kotlin.math.abs(remainingMs) / 1000L)
         val sign = if (remainingMs < 0) "+" else ""
         counter.text = String.format(Locale.US, "%s%02d:%02d", sign, absoluteSeconds / 60, absoluteSeconds % 60)
@@ -185,10 +213,22 @@ class MainActivity : ComponentActivity() {
         }
         recording = pending.start(ContextCompat.getMainExecutor(this)) { event ->
             when (event) {
-                is VideoRecordEvent.Start -> recordButton.text = "STOP"
+                is VideoRecordEvent.Start -> {
+                    recordButton.text = "■ STOP"
+                    recordButton.backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(0, 195, 65))
+                    blinkOn = true
+                    recordButton.alpha = 1f
+                    handler.removeCallbacks(blink)
+                    handler.postDelayed(blink, 500)
+                }
                 is VideoRecordEvent.Finalize -> {
+                    handler.removeCallbacks(blink)
+                    blinkOn = true
+                    recordButton.alpha = 1f
                     recording = null
-                    recordButton.text = "REC"
+                    recordButton.isEnabled = true
+                    recordButton.text = "● REC"
+                    recordButton.backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(190, 35, 45))
                     Toast.makeText(this, if (event.hasError()) "Erreur vidéo: ${event.error}" else "Vidéo enregistrée", Toast.LENGTH_LONG).show()
                 }
             }
@@ -198,6 +238,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         running = false
         handler.removeCallbacks(tick)
+        handler.removeCallbacks(blink)
         recording?.stop()
         super.onDestroy()
     }
