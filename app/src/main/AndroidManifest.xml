@@ -2,7 +2,7 @@
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-feature android:name="android.hardware.camera.any" android:required="true"/>
-    <application android:theme="@android:style/Theme.Material.Light.NoActionBar" android:label="CamTimer" android:icon="@drawable/ic_camtimer" android:roundIcon="@drawable/ic_camtimer" android:usesCleartextTraffic="false">
+    <application android:theme="@android:style/Theme.Material.Light.NoActionBar" android:label="CamTimer" android:icon="@drawable/ic_camtimer_launcher" android:roundIcon="@drawable/ic_camtimer_launcher" android:usesCleartextTraffic="false">
         <activity android:name=".MainActivity" android:screenOrientation="fullSensor" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
