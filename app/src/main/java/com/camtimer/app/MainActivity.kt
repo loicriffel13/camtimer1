@@ -360,7 +360,7 @@ class MainActivity : ComponentActivity() {
             setHintTextColor(Color.LTGRAY)
             setSelectAllOnFocus(true)
             gravity = Gravity.CENTER
-            singleLine = true
+            setSingleLine(true)
             inputType = if (decimal) android.text.InputType.TYPE_CLASS_NUMBER or
                 android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
                 else android.text.InputType.TYPE_CLASS_NUMBER
