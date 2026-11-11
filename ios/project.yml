@@ -1,0 +1,21 @@
+name: CamTimer
+options:
+  bundleIdPrefix: com.camtimer
+targets:
+  CamTimer:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources: [CamTimer]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.camtimer.ios
+        SWIFT_VERSION: 5.0
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_NSCameraUsageDescription: "CamTimer utilise la caméra pour enregistrer vos vidéos."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "CamTimer utilise le microphone pour enregistrer le son."
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "CamTimer sauvegarde les vidéos dans Photos."
+        INFOPLIST_KEY_UIApplicationSupportsDocumentBrowser: NO
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+        SUPPORTS_MACCATALYST: NO
