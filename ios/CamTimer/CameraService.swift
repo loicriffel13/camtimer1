@@ -1,6 +1,7 @@
 import AVFoundation
 import Photos
 import UIKit
+import SwiftUI
 
 final class CameraService: NSObject, ObservableObject, AVCaptureFileOutputRecordingDelegate {
     let session = AVCaptureSession()
