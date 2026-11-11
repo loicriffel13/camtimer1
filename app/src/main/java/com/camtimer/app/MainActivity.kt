@@ -65,6 +65,11 @@ class MainActivity : ComponentActivity() {
     private var videoStartMs = 0L
     private var exporting = false
     private var configuredMs = 180_000L
+    private val preferences by lazy { getSharedPreferences("camtimer_settings", Context.MODE_PRIVATE) }
+    private var alertEnabled = true
+    private var autoRecordEnabled = false
+    private var autoRecordAtMs = 15_000L
+    private var autoRecordTriggered = false
     private var alertPlayed = false
     private val beepSound by lazy { createHighBeep() }
     private val beepTasks = mutableListOf<Runnable>()
@@ -99,9 +104,15 @@ class MainActivity : ComponentActivity() {
                 val before = remainingMs
                 remainingMs -= now - lastTick
                 lastTick = now
-                if (!alertPlayed && before > 15_000L && remainingMs <= 15_000L && remainingMs > 0L) {
+                if (alertEnabled && !alertPlayed && before > 15_000L && remainingMs <= 15_000L && remainingMs > 0L) {
                     alertPlayed = true
                     playSingleAlert()
+                }
+                if (autoRecordEnabled && !autoRecordTriggered &&
+                    before > autoRecordAtMs && remainingMs <= autoRecordAtMs &&
+                    recording == null && !exporting) {
+                    autoRecordTriggered = true
+                    beginRecording()
                 }
                 updateCounter()
             }
@@ -112,12 +123,27 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        alertEnabled = preferences.getBoolean("alert_enabled", true)
+        autoRecordEnabled = preferences.getBoolean("auto_record_enabled", false)
+        autoRecordAtMs = preferences.getLong("auto_record_at_ms", 15_000L)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(20, 24, 32))
             setPadding(12, 12, 12, 20)
             fitsSystemWindows = true
         }
+        val settingsBar = FrameLayout(this)
+        val settingsButton = TextView(this).apply {
+            text = "⚙"
+            textSize = 29f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            contentDescription = "Paramètres"
+            setOnClickListener { showSettingsPage() }
+        }
+        val settingsSize = (48 * resources.displayMetrics.density).toInt()
+        settingsBar.addView(settingsButton, FrameLayout.LayoutParams(settingsSize, settingsSize, Gravity.END or Gravity.CENTER_VERTICAL))
+        root.addView(settingsBar, LinearLayout.LayoutParams(-1, settingsSize))
         preview = PreviewView(this)
         val cameraBox = FrameLayout(this)
         cameraBox.addView(preview, FrameLayout.LayoutParams(-1, -1))
@@ -156,7 +182,13 @@ class MainActivity : ComponentActivity() {
             }
         timerButton = roundButton("▶", Color.WHITE) {
             running = !running
-            if (running) lastTick = android.os.SystemClock.elapsedRealtime()
+            if (running) {
+                lastTick = android.os.SystemClock.elapsedRealtime()
+                if (remainingMs >= configuredMs - 100L) {
+                    autoRecordTriggered = false
+                    alertPlayed = false
+                }
+            }
             updateKeepScreenOn()
             updateTimerButton()
         }
@@ -287,10 +319,89 @@ class MainActivity : ComponentActivity() {
                     configuredMs = chosen
                     remainingMs = chosen
                     alertPlayed = false
+                    autoRecordTriggered = false
                     cancelBeeps()
                     updateCounter()
                 }
             }.show()
+    }
+
+    private fun showSettingsPage() {
+        val spacing = (18 * resources.displayMetrics.density).toInt()
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(spacing, spacing, spacing, spacing)
+            setBackgroundColor(Color.rgb(20, 24, 32))
+        }
+        fun heading(label: String): TextView = TextView(this).apply {
+            text = label
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setPadding(0, spacing / 2, 0, spacing / 2)
+        }
+        val soundSwitch = Switch(this).apply {
+            text = "Signal sonore à 15 secondes (5 000 Hz, 2 s)"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            isChecked = alertEnabled
+        }
+        page.addView(soundSwitch)
+        page.addView(heading("Enregistrement automatique"))
+        val autoSwitch = Switch(this).apply {
+            text = "Démarrer REC automatiquement"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            isChecked = autoRecordEnabled
+        }
+        page.addView(autoSwitch)
+        page.addView(heading("Démarrer l'enregistrement quand il reste :"))
+        val minutes = NumberPicker(this).apply {
+            minValue = 0
+            maxValue = 99
+            value = (autoRecordAtMs / 60_000L).toInt().coerceIn(0, 99)
+            setFormatter { String.format(Locale.US, "%02d", it) }
+            wrapSelectorWheel = true
+            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
+        }
+        val seconds = NumberPicker(this).apply {
+            minValue = 0
+            maxValue = 59
+            value = ((autoRecordAtMs / 1000L) % 60L).toInt()
+            setFormatter { String.format(Locale.US, "%02d", it) }
+            wrapSelectorWheel = true
+            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
+        }
+        val wheels = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            orientation = LinearLayout.HORIZONTAL
+            addView(minutes, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(heading(" : "))
+            addView(seconds, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        page.addView(wheels)
+        val help = TextView(this).apply {
+            text = "Exemple : 00:15 lance la vidéo à 15 secondes de la fin. Le bouton REC reste utilisable manuellement. Le réglage est conservé."
+            setTextColor(Color.LTGRAY)
+            textSize = 14f
+        }
+        page.addView(help)
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Paramètres CamTimer")
+            .setView(page)
+            .setNegativeButton("Annuler", null)
+            .setPositiveButton("Enregistrer") { _, _ ->
+                alertEnabled = soundSwitch.isChecked
+                autoRecordEnabled = autoSwitch.isChecked
+                autoRecordAtMs = (minutes.value * 60L + seconds.value) * 1000L
+                preferences.edit()
+                    .putBoolean("alert_enabled", alertEnabled)
+                    .putBoolean("auto_record_enabled", autoRecordEnabled)
+                    .putLong("auto_record_at_ms", autoRecordAtMs)
+                    .apply()
+                if (!alertEnabled) cancelBeeps()
+                Toast.makeText(this, "Paramètres enregistrés", Toast.LENGTH_SHORT).show()
+            }.create()
+        dialog.show()
     }
 
     private fun updateKeepScreenOn() {
