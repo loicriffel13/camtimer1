@@ -1,6 +1,7 @@
 package com.camtimer.app
 
 import android.Manifest
+import android.content.res.ColorStateList
 import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -188,7 +189,15 @@ class MainActivity : ComponentActivity() {
             }
         timerButton = roundButton("▶", Color.WHITE) {
             if (running) {
-                // STOP resets the countdown to the selected starting duration.
+                // STOP also ends an active recording before resetting the timer.
+                if (recording != null) {
+                    if (videoStartMs != 0L) {
+                        samples.add(TimerSample(SystemClock.elapsedRealtime() - videoStartMs, remainingMs))
+                        videoStartMs = 0L
+                    }
+                    recordButton.isEnabled = false
+                    recording?.stop()
+                }
                 running = false
                 remainingMs = configuredMs
                 alertPlayed = false
@@ -339,6 +348,14 @@ class MainActivity : ComponentActivity() {
             }.show()
     }
 
+    private fun styleOptionSwitch(toggle: Switch) {
+        val states = arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf())
+        toggle.thumbTintList = ColorStateList(states, intArrayOf(Color.WHITE, Color.rgb(105, 111, 121)))
+        toggle.trackTintList = ColorStateList(states, intArrayOf(Color.rgb(155, 160, 170), Color.rgb(55, 61, 72)))
+        toggle.setTextColor(Color.WHITE)
+        toggle.layoutDirection = View.LAYOUT_DIRECTION_LTR
+    }
+
     private fun showSettingsPage() {
         val density = resources.displayMetrics.density
         val pad = (14 * density).toInt()
@@ -387,6 +404,7 @@ class MainActivity : ComponentActivity() {
             setTextColor(Color.WHITE)
             isChecked = alertEnabled
         }
+        styleOptionSwitch(soundSwitch)
         page.addView(soundSwitch)
         val frequency = numeric(alertFrequencyHz.toString())
         val duration = numeric(String.format(Locale.US, "%.1f", alertDurationMs / 1000.0), true)
@@ -402,6 +420,7 @@ class MainActivity : ComponentActivity() {
             setTextColor(Color.WHITE)
             isChecked = autoRecordEnabled
         }
+        styleOptionSwitch(autoSwitch)
         page.addView(autoSwitch)
         val minutes = numeric((autoRecordAtMs / 60_000L).toString())
         val seconds = numeric(((autoRecordAtMs / 1000L) % 60L).toString())
