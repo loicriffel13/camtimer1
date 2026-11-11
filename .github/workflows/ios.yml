@@ -1,4 +1,4 @@
-name: CamTimer iOS source checks
+name: Build CamTimer iOS Simulator
 
 on:
   push:
@@ -6,13 +6,16 @@ on:
   workflow_dispatch:
 
 jobs:
-  inspect-ios:
+  build-ios:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Xcode version
-        run: xcodebuild -version
-      - name: Verify iOS port structure
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
         run: |
-          test -f ios/README.md
-          echo "iOS port scaffold present. No IPA is produced yet."
+          cd ios
+          xcodegen generate
+      - name: Build iOS Simulator (no Apple signing required)
+        run: |
+          xcodebuild -project ios/CamTimer.xcodeproj -scheme CamTimer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
