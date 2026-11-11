@@ -340,124 +340,116 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showSettingsPage() {
-        val spacing = (18 * resources.displayMetrics.density).toInt()
+        val density = resources.displayMetrics.density
+        val pad = (14 * density).toInt()
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(spacing, spacing, spacing, spacing)
+            setPadding(pad, pad / 2, pad, pad)
             setBackgroundColor(Color.rgb(20, 24, 32))
         }
-        fun heading(label: String): TextView = TextView(this).apply {
-            text = label
-            textSize = 18f
+        fun label(value: String, size: Float = 15f): TextView = TextView(this).apply {
+            text = value
+            textSize = size
             setTextColor(Color.WHITE)
-            setPadding(0, spacing / 2, 0, spacing / 2)
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        fun numeric(initial: String, decimal: Boolean = false): EditText = EditText(this).apply {
+            setText(initial)
+            textSize = 17f
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.LTGRAY)
+            setSelectAllOnFocus(true)
+            gravity = Gravity.CENTER
+            singleLine = true
+            inputType = if (decimal) android.text.InputType.TYPE_CLASS_NUMBER or
+                android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                else android.text.InputType.TYPE_CLASS_NUMBER
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(48, 56, 72))
+                cornerRadius = 7 * density
+                setStroke((1 * density).toInt().coerceAtLeast(1), Color.LTGRAY)
+            }
+            setPadding((5 * density).toInt(), 0, (5 * density).toInt(), 0)
+        }
+        fun row(title: String, field: EditText, unit: String) {
+            val line = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, (5 * density).toInt(), 0, (5 * density).toInt())
+            }
+            line.addView(label(title), LinearLayout.LayoutParams(0, -2, 1f))
+            line.addView(field, LinearLayout.LayoutParams((85 * density).toInt(), (43 * density).toInt()))
+            line.addView(label("  " + unit, 13f))
+            page.addView(line)
         }
         val soundSwitch = Switch(this).apply {
             text = "Activer le signal sonore"
-            textSize = 16f
             setTextColor(Color.WHITE)
             isChecked = alertEnabled
         }
         page.addView(soundSwitch)
-        page.addView(heading("Fréquence du son (Hz)"))
-        val frequency = NumberPicker(this).apply {
-            minValue = 1
-            maxValue = 50
-            value = (alertFrequencyHz / 100).coerceIn(1, 50)
-            setFormatter { "${it * 100}" }
-            wrapSelectorWheel = false
-            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
-        }
-        page.addView(frequency)
-        page.addView(heading("Durée du son (secondes)"))
-        val duration = NumberPicker(this).apply {
-            minValue = 1
-            maxValue = 10
-            value = (alertDurationMs / 500L).toInt().coerceIn(1, 10)
-            setFormatter { String.format(Locale.US, "%.1f", it * 0.5) }
-            wrapSelectorWheel = false
-            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
-        }
-        page.addView(duration)
-        page.addView(heading("Déclencher le son lorsqu'il reste (secondes)"))
-        val alertTime = NumberPicker(this).apply {
-            minValue = 1
-            maxValue = 120
-            value = (alertAtMs / 1000L).toInt().coerceIn(1, 120)
-            wrapSelectorWheel = false
-            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
-        }
-        page.addView(alertTime)
-        page.addView(heading("Enregistrement automatique"))
+        val frequency = numeric(alertFrequencyHz.toString())
+        val duration = numeric(String.format(Locale.US, "%.1f", alertDurationMs / 1000.0), true)
+        val alertTime = numeric((alertAtMs / 1000L).toString())
+        row("Fréquence", frequency, "Hz")
+        row("Durée", duration, "s")
+        row("Son à", alertTime, "s restantes")
+        page.addView(label("Enregistrement automatique", 17f).apply {
+            setPadding(0, pad, 0, pad / 2)
+        })
         val autoSwitch = Switch(this).apply {
             text = "Démarrer REC automatiquement"
-            textSize = 16f
             setTextColor(Color.WHITE)
             isChecked = autoRecordEnabled
         }
         page.addView(autoSwitch)
-        page.addView(heading("Démarrer l'enregistrement quand il reste :"))
-        // NumberPicker defaults to dark text on some devices; force white digits.
-        fun whitePicker(picker: NumberPicker) {
-            picker.setBackgroundColor(Color.rgb(38, 44, 55))
-            picker.setOnValueChangedListener { view, _, _ ->
-                for (i in 0 until view.childCount) {
-                    (view.getChildAt(i) as? EditText)?.setTextColor(Color.WHITE)
-                }
-            }
-            picker.post {
-                for (i in 0 until picker.childCount) {
-                    (picker.getChildAt(i) as? EditText)?.setTextColor(Color.WHITE)
-                }
-            }
-        }
-        val minutes = NumberPicker(this).apply {
-            minValue = 0
-            maxValue = 99
-            value = (autoRecordAtMs / 60_000L).toInt().coerceIn(0, 99)
-            setFormatter { String.format(Locale.US, "%02d", it) }
-            wrapSelectorWheel = true
-            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
-        }
-        val seconds = NumberPicker(this).apply {
-            minValue = 0
-            maxValue = 59
-            value = ((autoRecordAtMs / 1000L) % 60L).toInt()
-            setFormatter { String.format(Locale.US, "%02d", it) }
-            wrapSelectorWheel = true
-            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
-        }
-        whitePicker(minutes)
-        whitePicker(seconds)
-        whitePicker(frequency)
-        whitePicker(duration)
-        whitePicker(alertTime)
-        val wheels = LinearLayout(this).apply {
-            gravity = Gravity.CENTER
+        val minutes = numeric((autoRecordAtMs / 60_000L).toString())
+        val seconds = numeric(((autoRecordAtMs / 1000L) % 60L).toString())
+        val autoRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(minutes, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(heading(" : "))
-            addView(seconds, LinearLayout.LayoutParams(0, -2, 1f))
+            gravity = Gravity.CENTER_VERTICAL
         }
-        page.addView(wheels)
-        val help = TextView(this).apply {
-            text = "Exemple : 00:15 lance la vidéo à 15 secondes de la fin. Le bouton REC reste utilisable manuellement. Le réglage est conservé."
+        autoRow.addView(label("REC à", 15f), LinearLayout.LayoutParams(0, -2, 1f))
+        autoRow.addView(minutes, LinearLayout.LayoutParams((58 * density).toInt(), (43 * density).toInt()))
+        autoRow.addView(label(" : "), LinearLayout.LayoutParams(-2, -2))
+        autoRow.addView(seconds, LinearLayout.LayoutParams((58 * density).toInt(), (43 * density).toInt()))
+        autoRow.addView(label("  min : s", 13f))
+        page.addView(autoRow)
+        page.addView(label("Les réglages sont conservés. REC reste utilisable manuellement.", 12f).apply {
             setTextColor(Color.LTGRAY)
-            textSize = 14f
+            setPadding(0, pad, 0, 0)
+        })
+        val scroll = ScrollView(this).apply {
+            isFillViewport = false
+            addView(page)
         }
-        page.addView(help)
         val dialog = android.app.AlertDialog.Builder(this)
             .setTitle("Paramètres CamTimer")
-            .setView(page)
+            .setView(scroll)
             .setNegativeButton("Annuler", null)
-            .setPositiveButton("Enregistrer") { _, _ ->
+            .setPositiveButton("Enregistrer", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val hz = frequency.text.toString().toIntOrNull()
+                val secondsSound = duration.text.toString().replace(',', '.').toDoubleOrNull()
+                val trigger = alertTime.text.toString().toIntOrNull()
+                val minAuto = minutes.text.toString().toIntOrNull()
+                val secAuto = seconds.text.toString().toIntOrNull()
+                if (hz == null || hz !in 100..5000 ||
+                    secondsSound == null || secondsSound !in 0.5..5.0 ||
+                    trigger == null || trigger !in 1..120 ||
+                    minAuto == null || minAuto !in 0..99 ||
+                    secAuto == null || secAuto !in 0..59) {
+                    Toast.makeText(this, "Valeurs : 100-5000 Hz, 0,5-5 s, alerte 1-120 s, REC 0-99 min / 0-59 s", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
                 alertEnabled = soundSwitch.isChecked
-                alertFrequencyHz = frequency.value * 100
-                alertDurationMs = duration.value * 500L
-                alertAtMs = alertTime.value * 1000L
-                beepSound = null
+                alertFrequencyHz = hz
+                alertDurationMs = (secondsSound * 1000).toLong()
+                alertAtMs = trigger * 1000L
                 autoRecordEnabled = autoSwitch.isChecked
-                autoRecordAtMs = (minutes.value * 60L + seconds.value) * 1000L
+                autoRecordAtMs = (minAuto * 60L + secAuto) * 1000L
                 preferences.edit()
                     .putBoolean("alert_enabled", alertEnabled)
                     .putInt("alert_frequency_hz", alertFrequencyHz)
@@ -467,8 +459,11 @@ class MainActivity : ComponentActivity() {
                     .putLong("auto_record_at_ms", autoRecordAtMs)
                     .apply()
                 if (!alertEnabled) cancelBeeps()
+                dialog.dismiss()
                 Toast.makeText(this, "Paramètres enregistrés", Toast.LENGTH_SHORT).show()
-            }.create()
+            }
+        }
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         dialog.show()
     }
 
