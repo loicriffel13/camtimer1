@@ -230,33 +230,34 @@ class MainActivity : ComponentActivity() {
                 val cy = b.exactCenterY()
                 val r = minOf(b.width(), b.height()) * 0.47f
                 brush.style = Paint.Style.FILL
-                // Raised metallic rim, like the reference pictogram.
-                brush.color = Color.rgb(115, 118, 121)
-                canvas.drawCircle(cx, cy + r * 0.04f, r, brush)
-                brush.color = Color.rgb(205, 207, 209)
-                canvas.drawCircle(cx, cy - r * 0.05f, r * 0.93f, brush)
-                brush.color = Color.rgb(45, 48, 50)
-                canvas.drawCircle(cx, cy, r * 0.82f, brush)
-                val baseColor = if (isRecording || active) Color.rgb(237, 12, 24) else Color.rgb(0, 231, 36)
-                brush.color = baseColor
-                canvas.drawCircle(cx, cy, r * 0.72f, brush)
-                // Small glossy reflection at the top of the red shutter.
-                if (isRecording || active) {
-                    brush.color = Color.rgb(255, 105, 111)
-                    canvas.drawOval(RectF(cx-r*0.38f, cy-r*0.62f, cx+r*0.38f, cy-r*0.32f), brush)
-                }
-                brush.color = Color.BLACK
-                if (isRecording || active) {
-                    val h = r * 0.30f
-                    canvas.drawRect(cx-h, cy-h, cx+h, cy+h, brush)
-                } else {
-                    val path = android.graphics.Path().apply {
-                        moveTo(cx-r*0.24f, cy-r*0.42f)
-                        lineTo(cx+r*0.46f, cy)
-                        lineTo(cx-r*0.24f, cy+r*0.42f)
-                        close()
+                // Camera shutter: white outer ring, dark inner gap, red dot or square.
+                // Timer: white circular background, blue play or stop symbol.
+                brush.color = Color.WHITE
+                canvas.drawCircle(cx, cy, r, brush)
+                if (isRecording) {
+                    brush.color = Color.rgb(24, 28, 35)
+                    canvas.drawCircle(cx, cy, r * 0.83f, brush)
+                    brush.color = Color.rgb(232, 30, 45)
+                    if (active) {
+                        val h = r * 0.38f
+                        canvas.drawRoundRect(RectF(cx-h, cy-h, cx+h, cy+h), r*0.10f, r*0.10f, brush)
+                    } else {
+                        canvas.drawCircle(cx, cy, r * 0.66f, brush)
                     }
-                    canvas.drawPath(path, brush)
+                } else {
+                    brush.color = Color.rgb(20, 110, 235)
+                    if (active) {
+                        val h = r * 0.34f
+                        canvas.drawRoundRect(RectF(cx-h, cy-h, cx+h, cy+h), r*0.07f, r*0.07f, brush)
+                    } else {
+                        val path = android.graphics.Path().apply {
+                            moveTo(cx-r*0.27f, cy-r*0.42f)
+                            lineTo(cx+r*0.43f, cy)
+                            lineTo(cx-r*0.27f, cy+r*0.42f)
+                            close()
+                        }
+                        canvas.drawPath(path, brush)
+                    }
                 }
             }
             override fun setAlpha(alpha: Int) { brush.alpha = alpha; invalidateSelf() }
