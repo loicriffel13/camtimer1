@@ -164,7 +164,7 @@ class MainActivity : ComponentActivity() {
         }
         cameraBox.addView(counter, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
         finalSecondsOverlay = TextView(this).apply {
-            textSize = 136f
+            textSize = 272f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)
             setShadowLayer(12f, 2f, 3f, Color.BLACK)
@@ -551,7 +551,13 @@ class MainActivity : ComponentActivity() {
         if (counter.hasFocus()) return
         val finalSecond = (remainingMs + 999L) / 1000L
         if (running && remainingMs > 0L && finalSecond in 1L..5L) {
+            finalSecondsOverlay.textSize = 272f
             finalSecondsOverlay.text = finalSecond.toString()
+            finalSecondsOverlay.visibility = View.VISIBLE
+        } else if (running && remainingMs <= 0L && remainingMs > -1000L) {
+            // Display the start cue for one second when countdown reaches zero.
+            finalSecondsOverlay.textSize = 70f
+            finalSecondsOverlay.text = "Départ"
             finalSecondsOverlay.visibility = View.VISIBLE
         } else {
             finalSecondsOverlay.visibility = View.GONE
