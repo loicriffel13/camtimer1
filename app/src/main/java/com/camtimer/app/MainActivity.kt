@@ -132,7 +132,6 @@ class MainActivity : ComponentActivity() {
             setPadding(12, 12, 12, 20)
             fitsSystemWindows = true
         }
-        val settingsBar = FrameLayout(this)
         val settingsButton = TextView(this).apply {
             text = "⚙"
             textSize = 29f
@@ -142,8 +141,6 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { showSettingsPage() }
         }
         val settingsSize = (48 * resources.displayMetrics.density).toInt()
-        settingsBar.addView(settingsButton, FrameLayout.LayoutParams(settingsSize, settingsSize, Gravity.END or Gravity.CENTER_VERTICAL))
-        root.addView(settingsBar, LinearLayout.LayoutParams(-1, settingsSize))
         preview = PreviewView(this)
         val cameraBox = FrameLayout(this)
         cameraBox.addView(preview, FrameLayout.LayoutParams(-1, -1))
@@ -158,6 +155,9 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { showTimePicker() }
         }
         cameraBox.addView(counter, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+        // Overlay settings on the camera preview beside the timer, without shrinking it.
+        val settingsParams = FrameLayout.LayoutParams(settingsSize, settingsSize, Gravity.TOP or Gravity.END)
+        cameraBox.addView(settingsButton, settingsParams)
         root.addView(cameraBox, LinearLayout.LayoutParams(-1, 0, 1f))
 
         val controls = LinearLayout(this).apply {
@@ -181,13 +181,19 @@ class MainActivity : ComponentActivity() {
                 setOnClickListener { click() }
             }
         timerButton = roundButton("▶", Color.WHITE) {
-            running = !running
             if (running) {
+                // STOP resets the countdown to the selected starting duration.
+                running = false
+                remainingMs = configuredMs
+                alertPlayed = false
+                autoRecordTriggered = false
+                cancelBeeps()
+                updateCounter()
+            } else {
+                running = true
                 lastTick = android.os.SystemClock.elapsedRealtime()
-                if (remainingMs >= configuredMs - 100L) {
-                    autoRecordTriggered = false
-                    alertPlayed = false
-                }
+                autoRecordTriggered = false
+                alertPlayed = false
             }
             updateKeepScreenOn()
             updateTimerButton()
@@ -341,7 +347,7 @@ class MainActivity : ComponentActivity() {
             setPadding(0, spacing / 2, 0, spacing / 2)
         }
         val soundSwitch = Switch(this).apply {
-            text = "Signal sonore à 15 secondes (5 000 Hz, 2 s)"
+            text = "Signal sonore à 15 secondes (800 Hz, 2 s)"
             textSize = 16f
             setTextColor(Color.WHITE)
             isChecked = alertEnabled
@@ -356,6 +362,20 @@ class MainActivity : ComponentActivity() {
         }
         page.addView(autoSwitch)
         page.addView(heading("Démarrer l'enregistrement quand il reste :"))
+        // NumberPicker defaults to dark text on some devices; force white digits.
+        fun whitePicker(picker: NumberPicker) {
+            picker.setBackgroundColor(Color.rgb(38, 44, 55))
+            picker.setOnValueChangedListener { view, _, _ ->
+                for (i in 0 until view.childCount) {
+                    (view.getChildAt(i) as? EditText)?.setTextColor(Color.WHITE)
+                }
+            }
+            picker.post {
+                for (i in 0 until picker.childCount) {
+                    (picker.getChildAt(i) as? EditText)?.setTextColor(Color.WHITE)
+                }
+            }
+        }
         val minutes = NumberPicker(this).apply {
             minValue = 0
             maxValue = 99
@@ -372,6 +392,8 @@ class MainActivity : ComponentActivity() {
             wrapSelectorWheel = true
             descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
         }
+        whitePicker(minutes)
+        whitePicker(seconds)
         val wheels = LinearLayout(this).apply {
             gravity = Gravity.CENTER
             orientation = LinearLayout.HORIZONTAL
@@ -415,7 +437,7 @@ class MainActivity : ComponentActivity() {
         val count = rate * 2
         return ShortArray(count) { i ->
             val fade = minOf(1.0, i / 220.0, (count - i) / 220.0)
-            (sin(2.0 * PI * 5000.0 * i / rate) * 21000.0 * fade).toInt().toShort()
+            (sin(2.0 * PI * 800.0 * i / rate) * 21000.0 * fade).toInt().toShort()
         }
     }
 
