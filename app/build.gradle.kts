@@ -12,6 +12,29 @@ android {
         versionCode = 1
         versionName = "0.1"
     }
+    // Release signing values are supplied only by GitHub Actions secrets.
+    val releaseStoreFile = System.getenv("CAMTIMER_KEYSTORE_PATH")
+    val releaseStorePassword = System.getenv("CAMTIMER_KEYSTORE_PASSWORD")
+    val releaseKeyAlias = System.getenv("CAMTIMER_KEY_ALIAS")
+    val releaseKeyPassword = System.getenv("CAMTIMER_KEY_PASSWORD")
+    if (!releaseStoreFile.isNullOrBlank() &&
+        !releaseStorePassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank()) {
+        signingConfigs {
+            create("privateRelease") {
+                storeFile = file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+        buildTypes {
+            getByName("release") {
+                signingConfig = signingConfigs.getByName("privateRelease")
+            }
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
