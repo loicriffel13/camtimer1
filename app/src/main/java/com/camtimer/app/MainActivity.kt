@@ -67,11 +67,14 @@ class MainActivity : ComponentActivity() {
     private var configuredMs = 180_000L
     private val preferences by lazy { getSharedPreferences("camtimer_settings", Context.MODE_PRIVATE) }
     private var alertEnabled = true
+    private var alertFrequencyHz = 800
+    private var alertDurationMs = 2000L
+    private var alertAtMs = 15_000L
     private var autoRecordEnabled = false
     private var autoRecordAtMs = 15_000L
     private var autoRecordTriggered = false
     private var alertPlayed = false
-    private val beepSound by lazy { createHighBeep() }
+    private var beepSound: ShortArray? = null
     private val beepTasks = mutableListOf<Runnable>()
     private var blinkOn = true
     private val blink = object : Runnable {
@@ -104,7 +107,7 @@ class MainActivity : ComponentActivity() {
                 val before = remainingMs
                 remainingMs -= now - lastTick
                 lastTick = now
-                if (alertEnabled && !alertPlayed && before > 15_000L && remainingMs <= 15_000L && remainingMs > 0L) {
+                if (alertEnabled && !alertPlayed && before > alertAtMs && remainingMs <= alertAtMs && remainingMs > 0L) {
                     alertPlayed = true
                     playSingleAlert()
                 }
@@ -124,6 +127,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         alertEnabled = preferences.getBoolean("alert_enabled", true)
+        alertFrequencyHz = preferences.getInt("alert_frequency_hz", 800).coerceIn(100, 5000)
+        alertDurationMs = preferences.getLong("alert_duration_ms", 2000L).coerceIn(500L, 5000L)
+        alertAtMs = preferences.getLong("alert_at_ms", 15_000L).coerceIn(1000L, 5999000L)
         autoRecordEnabled = preferences.getBoolean("auto_record_enabled", false)
         autoRecordAtMs = preferences.getLong("auto_record_at_ms", 15_000L)
         val root = LinearLayout(this).apply {
@@ -347,12 +353,41 @@ class MainActivity : ComponentActivity() {
             setPadding(0, spacing / 2, 0, spacing / 2)
         }
         val soundSwitch = Switch(this).apply {
-            text = "Signal sonore à 15 secondes (800 Hz, 2 s)"
+            text = "Activer le signal sonore"
             textSize = 16f
             setTextColor(Color.WHITE)
             isChecked = alertEnabled
         }
         page.addView(soundSwitch)
+        page.addView(heading("Fréquence du son (Hz)"))
+        val frequency = NumberPicker(this).apply {
+            minValue = 1
+            maxValue = 50
+            value = (alertFrequencyHz / 100).coerceIn(1, 50)
+            setFormatter { "${it * 100}" }
+            wrapSelectorWheel = false
+            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
+        }
+        page.addView(frequency)
+        page.addView(heading("Durée du son (secondes)"))
+        val duration = NumberPicker(this).apply {
+            minValue = 1
+            maxValue = 10
+            value = (alertDurationMs / 500L).toInt().coerceIn(1, 10)
+            setFormatter { String.format(Locale.US, "%.1f", it * 0.5) }
+            wrapSelectorWheel = false
+            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
+        }
+        page.addView(duration)
+        page.addView(heading("Déclencher le son lorsqu'il reste (secondes)"))
+        val alertTime = NumberPicker(this).apply {
+            minValue = 1
+            maxValue = 120
+            value = (alertAtMs / 1000L).toInt().coerceIn(1, 120)
+            wrapSelectorWheel = false
+            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
+        }
+        page.addView(alertTime)
         page.addView(heading("Enregistrement automatique"))
         val autoSwitch = Switch(this).apply {
             text = "Démarrer REC automatiquement"
@@ -394,6 +429,9 @@ class MainActivity : ComponentActivity() {
         }
         whitePicker(minutes)
         whitePicker(seconds)
+        whitePicker(frequency)
+        whitePicker(duration)
+        whitePicker(alertTime)
         val wheels = LinearLayout(this).apply {
             gravity = Gravity.CENTER
             orientation = LinearLayout.HORIZONTAL
@@ -414,10 +452,17 @@ class MainActivity : ComponentActivity() {
             .setNegativeButton("Annuler", null)
             .setPositiveButton("Enregistrer") { _, _ ->
                 alertEnabled = soundSwitch.isChecked
+                alertFrequencyHz = frequency.value * 100
+                alertDurationMs = duration.value * 500L
+                alertAtMs = alertTime.value * 1000L
+                beepSound = null
                 autoRecordEnabled = autoSwitch.isChecked
                 autoRecordAtMs = (minutes.value * 60L + seconds.value) * 1000L
                 preferences.edit()
                     .putBoolean("alert_enabled", alertEnabled)
+                    .putInt("alert_frequency_hz", alertFrequencyHz)
+                    .putLong("alert_duration_ms", alertDurationMs)
+                    .putLong("alert_at_ms", alertAtMs)
                     .putBoolean("auto_record_enabled", autoRecordEnabled)
                     .putLong("auto_record_at_ms", autoRecordAtMs)
                     .apply()
@@ -434,15 +479,16 @@ class MainActivity : ComponentActivity() {
 
     private fun createHighBeep(): ShortArray {
         val rate = 44100
-        val count = rate * 2
+        val count = (rate * alertDurationMs / 1000L).toInt()
         return ShortArray(count) { i ->
             val fade = minOf(1.0, i / 220.0, (count - i) / 220.0)
-            (sin(2.0 * PI * 800.0 * i / rate) * 21000.0 * fade).toInt().toShort()
+            (sin(2.0 * PI * alertFrequencyHz * i / rate) * 21000.0 * fade).toInt().toShort()
         }
     }
 
     private fun playHighBeep() {
-        val samples = beepSound
+        val samples = createHighBeep()
+        val duration = alertDurationMs
         Thread {
             try {
                 val audio = AudioTrack.Builder()
@@ -458,7 +504,7 @@ class MainActivity : ComponentActivity() {
                     .build()
                 audio.write(samples, 0, samples.size)
                 audio.play()
-                Thread.sleep(2100)
+                Thread.sleep(duration + 100L)
                 audio.stop()
                 audio.release()
             } catch (_: Exception) { }
