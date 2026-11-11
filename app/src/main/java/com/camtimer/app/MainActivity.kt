@@ -7,6 +7,9 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.view.WindowManager
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
@@ -54,7 +57,10 @@ class MainActivity : ComponentActivity() {
     private val samples = mutableListOf<TimerSample>()
     private var videoStartMs = 0L
     private var exporting = false
-    private var configuredMs = 120_000L
+    private var configuredMs = 180_000L
+    private var alertPlayed = false
+    private val tone = ToneGenerator(AudioManager.STREAM_ALARM, 90)
+    private val beepTasks = mutableListOf<Runnable>()
     private var blinkOn = true
     private val blink = object : Runnable {
         override fun run() {
@@ -68,7 +74,7 @@ class MainActivity : ComponentActivity() {
     private var videoCapture: VideoCapture<Recorder>? = null
     private var recording: Recording? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var remainingMs = 120_000L
+    private var remainingMs = 180_000L
     private var running = false
     private var lastTick = 0L
 
@@ -83,8 +89,13 @@ class MainActivity : ComponentActivity() {
         override fun run() {
             if (running) {
                 val now = android.os.SystemClock.elapsedRealtime()
+                val before = remainingMs
                 remainingMs -= now - lastTick
                 lastTick = now
+                if (!alertPlayed && before > 15_000L && remainingMs <= 15_000L && remainingMs > 0L) {
+                    alertPlayed = true
+                    playThreeBeeps()
+                }
                 updateCounter()
             }
             if (videoStartMs != 0L) samples.add(TimerSample(SystemClock.elapsedRealtime() - videoStartMs, remainingMs))
@@ -103,19 +114,15 @@ class MainActivity : ComponentActivity() {
         preview = PreviewView(this)
         val cameraBox = FrameLayout(this)
         cameraBox.addView(preview, FrameLayout.LayoutParams(-1, -1))
-        counter = EditText(this).apply {
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
-            setSelectAllOnFocus(true)
+        counter = TextView(this).apply {
             typeface = Typeface.DEFAULT_BOLD
-            setOnEditorActionListener { _, _, _ -> applyTypedTime(); true }
-            setOnFocusChangeListener { _, focused -> if (!focused) applyTypedTime() }
             textSize = 42f
             setTextColor(Color.WHITE)
             setShadowLayer(5f, 2f, 2f, Color.BLACK)
             gravity = Gravity.CENTER
             setBackgroundColor(0x55000000)
+            contentDescription = "Régler les minutes et secondes"
+            setOnClickListener { showTimePicker() }
         }
         cameraBox.addView(counter, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
         root.addView(cameraBox, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -131,32 +138,37 @@ class MainActivity : ComponentActivity() {
                 textSize = 34f
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
-                setTextColor(Color.BLACK)
+                setTextColor(Color.BLUE)
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
                     setColor(color)
-                    setStroke(5, Color.DKGRAY)
+                    setStroke(3, Color.rgb(220, 225, 232))
                 }
                 elevation = 8f
                 setOnClickListener { click() }
             }
-        timerButton = roundButton("▶", Color.rgb(0, 225, 60)) {
-            applyTypedTime()
+        timerButton = roundButton("▶", Color.WHITE) {
             running = !running
             if (running) lastTick = android.os.SystemClock.elapsedRealtime()
+            updateKeepScreenOn()
             updateTimerButton()
         }
         val buttonSize = (68 * resources.displayMetrics.density).toInt()
-        recordButton = roundButton("●", Color.rgb(220, 25, 35)) {
+        recordButton = roundButton("●", Color.WHITE) {
+            // Camera-style red symbol within a white circular shutter.
+
             if (recording == null) beginRecording() else {
                 recordButton.isEnabled = false
                 recording?.stop()
             }
         }
+        recordButton.setTextColor(Color.rgb(225, 20, 35))
         val resetButton = roundButton("↺", Color.rgb(105, 115, 130)) {
-            applyTypedTime()
             running = false
             remainingMs = configuredMs
+            alertPlayed = false
+            cancelBeeps()
+            updateKeepScreenOn()
             updateCounter()
             updateTimerButton()
         }
@@ -187,30 +199,78 @@ class MainActivity : ComponentActivity() {
 
     private fun updateTimerButton() {
         timerButton.text = if (running) "■" else "▶"
-        setCircleColor(timerButton, if (running) Color.rgb(235, 25, 35) else Color.rgb(0, 225, 60))
+        setCircleColor(timerButton, Color.WHITE)
+        timerButton.setTextColor(Color.rgb(20, 110, 235))
         timerButton.contentDescription = if (running) "STOP chronomètre" else "START chronomètre"
     }
 
-    private fun applyTypedTime() {
-        if (!counter.hasFocus()) return
-        val value = counter.text.toString().trim().removePrefix("+")
-        val parts = value.split(":")
-        val seconds = if (parts.size == 2) {
-            val m = parts[0].toLongOrNull()
-            val sec = parts[1].toLongOrNull()
-            if (m != null && sec != null && sec in 0..59) m * 60 + sec else null
-        } else value.toLongOrNull()
-        if (seconds != null && seconds in 1..86400) {
-            configuredMs = seconds * 1000L
-            remainingMs = configuredMs
-            lastTick = android.os.SystemClock.elapsedRealtime()
-        } else {
-            Toast.makeText(this, "Durée attendue : MM:SS (ex. 02:30)", Toast.LENGTH_SHORT).show()
+    private fun showTimePicker() {
+        if (running) {
+            Toast.makeText(this, "Arrête le chrono pour modifier la durée", Toast.LENGTH_SHORT).show()
+            return
         }
-        counter.clearFocus()
-        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
-            .hideSoftInputFromWindow(counter.windowToken, 0)
-        updateCounter()
+        val minutes = NumberPicker(this).apply {
+            minValue = 0
+            maxValue = 99
+            value = (configuredMs / 60_000L).toInt()
+            wrapSelectorWheel = true
+            setFormatter { String.format(Locale.US, "%02d", it) }
+            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
+        }
+        val seconds = NumberPicker(this).apply {
+            minValue = 0
+            maxValue = 59
+            value = ((configuredMs / 1000L) % 60L).toInt()
+            wrapSelectorWheel = true
+            setFormatter { String.format(Locale.US, "%02d", it) }
+            descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
+        }
+        val pickerRow = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            orientation = LinearLayout.HORIZONTAL
+            addView(minutes, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(TextView(this@MainActivity).apply {
+                text = ":"
+                textSize = 32f
+                gravity = Gravity.CENTER
+            })
+            addView(seconds, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Durée du chronomètre")
+            .setView(pickerRow)
+            .setNegativeButton("Annuler", null)
+            .setPositiveButton("Valider") { _, _ ->
+                val chosen = (minutes.value * 60L + seconds.value) * 1000L
+                if (chosen == 0L) {
+                    Toast.makeText(this, "Choisis une durée supérieure à zéro", Toast.LENGTH_SHORT).show()
+                } else {
+                    configuredMs = chosen
+                    remainingMs = chosen
+                    alertPlayed = false
+                    cancelBeeps()
+                    updateCounter()
+                }
+            }.show()
+    }
+
+    private fun updateKeepScreenOn() {
+        if (running) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun playThreeBeeps() {
+        cancelBeeps()
+        for (i in 0..2) {
+            val task = Runnable { tone.startTone(ToneGenerator.TONE_PROP_BEEP, 170) }
+            beepTasks.add(task)
+            handler.postDelayed(task, i * 350L)
+        }
+    }
+
+    private fun cancelBeeps() {
+        beepTasks.forEach { handler.removeCallbacks(it) }
+        beepTasks.clear()
     }
 
     private fun updateCounter() {
@@ -373,6 +433,9 @@ class MainActivity : ComponentActivity() {
         running = false
         handler.removeCallbacks(tick)
         handler.removeCallbacks(blink)
+        cancelBeeps()
+        tone.release()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         recording?.stop()
         super.onDestroy()
     }
