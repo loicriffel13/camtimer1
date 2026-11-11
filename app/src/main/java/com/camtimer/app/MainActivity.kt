@@ -550,7 +550,7 @@ class MainActivity : ComponentActivity() {
     private fun updateCounter() {
         if (counter.hasFocus()) return
         val finalSecond = (remainingMs + 999L) / 1000L
-        if (running && remainingMs > 0L && finalSecond in 1L..5L) {
+        if (running && remainingMs > 0L && (finalSecond == 10L || finalSecond in 1L..5L)) {
             finalSecondsOverlay.textSize = 272f
             finalSecondsOverlay.text = finalSecond.toString()
             finalSecondsOverlay.visibility = View.VISIBLE
