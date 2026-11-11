@@ -8,7 +8,11 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.media.AudioManager
-import android.media.ToneGenerator
+import android.media.AudioTrack
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import kotlin.math.sin
+import kotlin.math.PI
 import android.view.WindowManager
 import android.os.Handler
 import android.os.Looper
@@ -62,7 +66,7 @@ class MainActivity : ComponentActivity() {
     private var exporting = false
     private var configuredMs = 180_000L
     private var alertPlayed = false
-    private val tone = ToneGenerator(AudioManager.STREAM_ALARM, 90)
+    private val beepSound by lazy { createHighBeep() }
     private val beepTasks = mutableListOf<Runnable>()
     private var blinkOn = true
     private val blink = object : Runnable {
@@ -189,42 +193,38 @@ class MainActivity : ComponentActivity() {
         object : Drawable() {
             private val brush = Paint(Paint.ANTI_ALIAS_FLAG)
             override fun draw(canvas: Canvas) {
-                val bounds = bounds
-                val cx = bounds.exactCenterX()
-                val cy = bounds.exactCenterY()
-                val radius = minOf(bounds.width(), bounds.height()) * 0.47f
-                if (isRecording) {
-                    // White camera shutter ring, dark gap and red record/stop symbol.
-                    brush.style = Paint.Style.FILL
-                    brush.color = Color.WHITE
-                    canvas.drawCircle(cx, cy, radius, brush)
-                    brush.color = Color.rgb(24, 28, 35)
-                    canvas.drawCircle(cx, cy, radius * 0.83f, brush)
-                    brush.color = Color.rgb(232, 30, 45)
-                    if (active) {
-                        val half = radius * 0.38f
-                        canvas.drawRoundRect(RectF(cx-half, cy-half, cx+half, cy+half), radius*0.10f, radius*0.10f, brush)
-                    } else {
-                        canvas.drawCircle(cx, cy, radius * 0.66f, brush)
-                    }
+                val b = bounds
+                val cx = b.exactCenterX()
+                val cy = b.exactCenterY()
+                val r = minOf(b.width(), b.height()) * 0.47f
+                brush.style = Paint.Style.FILL
+                // Raised metallic rim, like the reference pictogram.
+                brush.color = Color.rgb(115, 118, 121)
+                canvas.drawCircle(cx, cy + r * 0.04f, r, brush)
+                brush.color = Color.rgb(205, 207, 209)
+                canvas.drawCircle(cx, cy - r * 0.05f, r * 0.93f, brush)
+                brush.color = Color.rgb(45, 48, 50)
+                canvas.drawCircle(cx, cy, r * 0.82f, brush)
+                val baseColor = if (isRecording || active) Color.rgb(237, 12, 24) else Color.rgb(0, 231, 36)
+                brush.color = baseColor
+                canvas.drawCircle(cx, cy, r * 0.72f, brush)
+                // Small glossy reflection at the top of the red shutter.
+                if (isRecording || active) {
+                    brush.color = Color.rgb(255, 105, 111)
+                    canvas.drawOval(RectF(cx-r*0.38f, cy-r*0.62f, cx+r*0.38f, cy-r*0.32f), brush)
+                }
+                brush.color = Color.BLACK
+                if (isRecording || active) {
+                    val h = r * 0.30f
+                    canvas.drawRect(cx-h, cy-h, cx+h, cy+h, brush)
                 } else {
-                    // Xiaomi-style timer control: blue play/stop on a white circle.
-                    brush.style = Paint.Style.FILL
-                    brush.color = Color.WHITE
-                    canvas.drawCircle(cx, cy, radius, brush)
-                    brush.color = Color.rgb(20, 110, 235)
-                    if (active) {
-                        val half = radius * 0.34f
-                        canvas.drawRoundRect(RectF(cx-half, cy-half, cx+half, cy+half), radius*0.07f, radius*0.07f, brush)
-                    } else {
-                        val triangle = android.graphics.Path().apply {
-                            moveTo(cx - radius*0.27f, cy - radius*0.42f)
-                            lineTo(cx + radius*0.43f, cy)
-                            lineTo(cx - radius*0.27f, cy + radius*0.42f)
-                            close()
-                        }
-                        canvas.drawPath(triangle, brush)
+                    val path = android.graphics.Path().apply {
+                        moveTo(cx-r*0.24f, cy-r*0.42f)
+                        lineTo(cx+r*0.46f, cy)
+                        lineTo(cx-r*0.24f, cy+r*0.42f)
+                        close()
                     }
+                    canvas.drawPath(path, brush)
                 }
             }
             override fun setAlpha(alpha: Int) { brush.alpha = alpha; invalidateSelf() }
@@ -298,10 +298,43 @@ class MainActivity : ComponentActivity() {
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
+    private fun createHighBeep(): ShortArray {
+        val rate = 44100
+        val count = rate * 160 / 1000
+        return ShortArray(count) { i ->
+            val fade = minOf(1.0, i / 220.0, (count - i) / 220.0)
+            (sin(2.0 * PI * 2800.0 * i / rate) * 21000.0 * fade).toInt().toShort()
+        }
+    }
+
+    private fun playHighBeep() {
+        val samples = beepSound
+        Thread {
+            try {
+                val audio = AudioTrack.Builder()
+                    .setAudioAttributes(AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                    .setAudioFormat(AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(44100)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                    .setTransferMode(AudioTrack.MODE_STATIC)
+                    .setBufferSizeInBytes(samples.size * 2)
+                    .build()
+                audio.write(samples, 0, samples.size)
+                audio.play()
+                Thread.sleep(230)
+                audio.stop()
+                audio.release()
+            } catch (_: Exception) { }
+        }.start()
+    }
+
     private fun playThreeBeeps() {
         cancelBeeps()
         for (i in 0..2) {
-            val task = Runnable { tone.startTone(ToneGenerator.TONE_DTMF_D, 170) }
+            val task = Runnable { playHighBeep() }
             beepTasks.add(task)
             handler.postDelayed(task, i * 350L)
         }
@@ -473,7 +506,6 @@ class MainActivity : ComponentActivity() {
         handler.removeCallbacks(tick)
         handler.removeCallbacks(blink)
         cancelBeeps()
-        tone.release()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         recording?.stop()
         super.onDestroy()
