@@ -31,6 +31,9 @@ import androidx.core.content.ContextCompat
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.drawable.Drawable
+import android.graphics.PixelFormat
 import android.net.Uri
 import android.os.SystemClock
 import androidx.media3.common.MediaItem
@@ -162,27 +165,16 @@ class MainActivity : ComponentActivity() {
                 recording?.stop()
             }
         }
-        recordButton.setTextColor(Color.rgb(225, 20, 35))
-        val resetButton = roundButton("↺", Color.rgb(105, 115, 130)) {
-            running = false
-            remainingMs = configuredMs
-            alertPlayed = false
-            cancelBeeps()
-            updateKeepScreenOn()
-            updateCounter()
-            updateTimerButton()
-        }
-        resetButton.setTextColor(Color.WHITE)
-        resetButton.contentDescription = "RESET chronomètre"
+        recordButton.text = ""
+        recordButton.background = controlDrawable(isRecording = true, active = false)
         // Equal-width cells anchor START at left and ENR at right.
         fun addControl(view: TextView, alignment: Int) {
             val slot = FrameLayout(this)
             slot.addView(view, FrameLayout.LayoutParams(buttonSize, buttonSize, alignment))
             controls.addView(slot, LinearLayout.LayoutParams(0, buttonSize, 1f))
         }
-        addControl(timerButton, Gravity.START or Gravity.CENTER_VERTICAL)
-        addControl(resetButton, Gravity.CENTER)
-        addControl(recordButton, Gravity.END or Gravity.CENTER_VERTICAL)
+        addControl(timerButton, Gravity.CENTER)
+        addControl(recordButton, Gravity.CENTER)
         root.addView(controls)
         window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         setContentView(root)
@@ -193,14 +185,61 @@ class MainActivity : ComponentActivity() {
         permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
     }
 
+    private fun controlDrawable(isRecording: Boolean, active: Boolean): Drawable =
+        object : Drawable() {
+            private val brush = Paint(Paint.ANTI_ALIAS_FLAG)
+            override fun draw(canvas: Canvas) {
+                val bounds = bounds
+                val cx = bounds.exactCenterX()
+                val cy = bounds.exactCenterY()
+                val radius = minOf(bounds.width(), bounds.height()) * 0.47f
+                if (isRecording) {
+                    // White camera shutter ring, dark gap and red record/stop symbol.
+                    brush.style = Paint.Style.FILL
+                    brush.color = Color.WHITE
+                    canvas.drawCircle(cx, cy, radius, brush)
+                    brush.color = Color.rgb(24, 28, 35)
+                    canvas.drawCircle(cx, cy, radius * 0.83f, brush)
+                    brush.color = Color.rgb(232, 30, 45)
+                    if (active) {
+                        val half = radius * 0.38f
+                        canvas.drawRoundRect(RectF(cx-half, cy-half, cx+half, cy+half), radius*0.10f, radius*0.10f, brush)
+                    } else {
+                        canvas.drawCircle(cx, cy, radius * 0.66f, brush)
+                    }
+                } else {
+                    // Xiaomi-style timer control: blue play/stop on a white circle.
+                    brush.style = Paint.Style.FILL
+                    brush.color = Color.WHITE
+                    canvas.drawCircle(cx, cy, radius, brush)
+                    brush.color = Color.rgb(20, 110, 235)
+                    if (active) {
+                        val half = radius * 0.34f
+                        canvas.drawRoundRect(RectF(cx-half, cy-half, cx+half, cy+half), radius*0.07f, radius*0.07f, brush)
+                    } else {
+                        val triangle = android.graphics.Path().apply {
+                            moveTo(cx - radius*0.27f, cy - radius*0.42f)
+                            lineTo(cx + radius*0.43f, cy)
+                            lineTo(cx - radius*0.27f, cy + radius*0.42f)
+                            close()
+                        }
+                        canvas.drawPath(triangle, brush)
+                    }
+                }
+            }
+            override fun setAlpha(alpha: Int) { brush.alpha = alpha; invalidateSelf() }
+            override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) { brush.colorFilter = colorFilter; invalidateSelf() }
+            @Deprecated("Deprecated in Java")
+            override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+        }
+
     private fun setCircleColor(view: TextView, color: Int) {
         (view.background as? GradientDrawable)?.setColor(color)
     }
 
     private fun updateTimerButton() {
-        timerButton.text = if (running) "■" else "▶"
-        setCircleColor(timerButton, Color.WHITE)
-        timerButton.setTextColor(Color.rgb(20, 110, 235))
+        timerButton.text = ""
+        timerButton.background = controlDrawable(isRecording = false, active = running)
         timerButton.contentDescription = if (running) "STOP chronomètre" else "START chronomètre"
     }
 
@@ -262,7 +301,7 @@ class MainActivity : ComponentActivity() {
     private fun playThreeBeeps() {
         cancelBeeps()
         for (i in 0..2) {
-            val task = Runnable { tone.startTone(ToneGenerator.TONE_PROP_BEEP, 170) }
+            val task = Runnable { tone.startTone(ToneGenerator.TONE_DTMF_D, 170) }
             beepTasks.add(task)
             handler.postDelayed(task, i * 350L)
         }
@@ -318,7 +357,7 @@ class MainActivity : ComponentActivity() {
                     videoStartMs = SystemClock.elapsedRealtime()
                     samples.clear()
                     samples.add(TimerSample(0L, remainingMs))
-                    recordButton.text = "■"
+                    recordButton.background = controlDrawable(isRecording = true, active = true)
                     recordButton.contentDescription = "STOP enregistrement"
                     blinkOn = true
                     recordButton.alpha = 1f
@@ -331,7 +370,7 @@ class MainActivity : ComponentActivity() {
                     recordButton.alpha = 1f
                     recording = null
                     recordButton.isEnabled = true
-                    recordButton.text = "●"
+                    recordButton.background = controlDrawable(isRecording = true, active = false)
                     recordButton.contentDescription = "ENR enregistrement"
                     videoStartMs = 0L
                     if (event.hasError()) {
