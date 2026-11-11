@@ -59,6 +59,7 @@ import java.util.concurrent.TimeUnit
 class MainActivity : ComponentActivity() {
     private lateinit var preview: PreviewView
     private lateinit var counter: TextView
+    private lateinit var finalSecondsOverlay: TextView
     private lateinit var recordButton: TextView
     private lateinit var timerButton: TextView
     private data class TimerSample(val atMs: Long, val remaining: Long)
@@ -162,6 +163,17 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { showTimePicker() }
         }
         cameraBox.addView(counter, FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
+        finalSecondsOverlay = TextView(this).apply {
+            textSize = 136f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            setShadowLayer(12f, 2f, 3f, Color.BLACK)
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            isClickable = false
+            contentDescription = "Dernières secondes du compte à rebours"
+        }
+        cameraBox.addView(finalSecondsOverlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
         // Overlay settings on the camera preview beside the timer, without shrinking it.
         val settingsParams = FrameLayout.LayoutParams(settingsSize, settingsSize, Gravity.TOP or Gravity.END)
         cameraBox.addView(settingsButton, settingsParams)
@@ -210,6 +222,7 @@ class MainActivity : ComponentActivity() {
                 autoRecordTriggered = false
                 alertPlayed = false
             }
+            updateCounter()
             updateKeepScreenOn()
             updateTimerButton()
         }
@@ -257,7 +270,7 @@ class MainActivity : ComponentActivity() {
                 canvas.drawCircle(cx, cy, r, brush)
                 if (isRecording) {
                     brush.color = Color.rgb(24, 28, 35)
-                    canvas.drawCircle(cx, cy, r * 0.83f, brush)
+                    canvas.drawCircle(cx, cy, r * 0.93f, brush)
                     brush.color = Color.rgb(232, 30, 45)
                     if (active) {
                         val h = r * 0.38f
@@ -536,6 +549,13 @@ class MainActivity : ComponentActivity() {
 
     private fun updateCounter() {
         if (counter.hasFocus()) return
+        val finalSecond = (remainingMs + 999L) / 1000L
+        if (running && remainingMs > 0L && finalSecond in 1L..5L) {
+            finalSecondsOverlay.text = finalSecond.toString()
+            finalSecondsOverlay.visibility = View.VISIBLE
+        } else {
+            finalSecondsOverlay.visibility = View.GONE
+        }
         // Display zero once: positive overtime starts at +00:01.
         val absoluteSeconds = if (remainingMs >= 0L) {
             (remainingMs + 999L) / 1000L
